@@ -28,7 +28,10 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Lab 2 - Animated Square", NULL, NULL);
+    const int windowWidth = 800;
+    const int windowHeight = 600;
+
+    GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Lab - Interactive Rectangle", NULL, NULL);
     glfwMakeContextCurrent(window);
     gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
 
@@ -47,15 +50,15 @@ int main() {
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    // Позиції (X, Y, Z)    // Текстурні координати (U, V)
     float vertices[] = {
-        // Позиції (X, Y, Z)    // Текстурні координати (U, V)
-        -0.4f,  0.4f, 0.0f,     0.0f, 1.0f,
-         0.4f,  0.4f, 0.0f,     1.0f, 1.0f,
-        -0.4f, -0.4f, 0.0f,     0.0f, 0.0f,
+        -0.3f,  0.2f, 0.0f,     0.0f, 1.0f, // В-Л
+         0.3f,  0.2f, 0.0f,     1.0f, 1.0f, // В-П
+        -0.3f, -0.2f, 0.0f,     0.0f, 0.0f, // Н-Л
 
-         0.4f,  0.4f, 0.0f,     1.0f, 1.0f,
-         0.4f, -0.4f, 0.0f,     1.0f, 0.0f,
-        -0.4f, -0.4f, 0.0f,     0.0f, 0.0f
+         0.3f,  0.2f, 0.0f,     1.0f, 1.0f, // В-П
+         0.3f, -0.2f, 0.0f,     1.0f, 0.0f, // Н-П
+        -0.3f, -0.2f, 0.0f,     0.0f, 0.0f  // Н-Л
     };
 
     unsigned int VBO, VAO;
@@ -72,8 +75,8 @@ int main() {
     glEnableVertexAttribArray(1);
 
     unsigned char texData[] = {
-        255, 100, 0,    0, 150, 255,
-        0, 150, 255,    255, 100, 0
+        255, 128, 0,    0, 200, 255,
+        0, 200, 255,    255, 128, 0
     };
 
     unsigned int texture;
@@ -83,9 +86,10 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 2, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, texData);
 
+    float posX = 0.0f;
+    float posY = 0.0f;
     float angle = 0.0f;
-    bool isAnimated = true;
-    bool spacePressedLastFrame = false;
+    float moveSpeed = 0.015f;
 
     double lastTime = glfwGetTime();
     const double timePerFrame = 1.0 / 60.0;
@@ -96,28 +100,33 @@ int main() {
         if (currentTime - lastTime >= timePerFrame) {
             lastTime = currentTime;
 
-            int spaceState = glfwGetKey(window, GLFW_KEY_SPACE);
-            if (spaceState == GLFW_PRESS && !spacePressedLastFrame) {
-                isAnimated = !isAnimated;
-            }
-            spacePressedLastFrame = (spaceState == GLFW_PRESS);
-
             if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
                 glfwSetWindowShouldClose(window, true);
 
-            if (isAnimated) {
-                angle += 1.0f;
-                if (angle >= 360.0f) angle -= 360.0f;
+            if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  posX -= moveSpeed;
+            if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) posX += moveSpeed;
+            if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)    posY += moveSpeed;
+            if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)  posY -= moveSpeed;
+
+            double mouseX, mouseY;
+            glfwGetCursorPos(window, &mouseX, &mouseY);
+
+            float ndcX = (float)(mouseX / windowWidth) * 2.0f - 1.0f;
+            float ndcY = 1.0f - (float)(mouseY / windowHeight) * 2.0f;
+
+            if (ndcX >= posX - 0.3f && ndcX <= posX + 0.3f &&
+                ndcY >= posY - 0.2f && ndcY <= posY + 0.2f) {
+                angle += 2.0f;
             }
 
-            //РЕНДЕРИНГ
-            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+            glClearColor(0.12f, 0.12f, 0.12f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
 
             glUseProgram(shaderProgram);
             glBindTexture(GL_TEXTURE_2D, texture);
 
             glm::mat4 transform = glm::mat4(1.0f);
+            transform = glm::translate(transform, glm::vec3(posX, posY, 0.0f));
             transform = glm::rotate(transform, glm::radians(angle), glm::vec3(0.0f, 0.0f, 1.0f));
 
             unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
