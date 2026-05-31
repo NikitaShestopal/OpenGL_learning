@@ -1,484 +1,162 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "Shader.h"
+#include "Camera.h"
+#include "Model.h"
+
 #include <iostream>
-#include <vector>
+#include <cmath>
 
-const char *vertexShaderSource = R"(
-#version 330 core
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void processInput(GLFWwindow *window);
 
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec2 aTex;
+const unsigned int SCR_WIDTH = 1280;
+const unsigned int SCR_HEIGHT = 720;
 
-out vec2 TexCoord;
-
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-
-void main()
-{
-    gl_Position = projection * view * model * vec4(aPos, 1.0);
-    TexCoord = aTex;
-}
-)";
-
-const char *fragmentShaderSource = R"(
-#version 330 core
-
-out vec4 FragColor;
-
-in vec2 TexCoord;
-
-uniform sampler2D texture1;
-
-void main()
-{
-    FragColor = texture(texture1, TexCoord);
-}
-)";
-
-const char *borderFragmentShaderSource = R"(
-#version 330 core
-
-out vec4 FragColor;
-
-void main()
-{
-    FragColor = vec4(0.0, 1.0, 0.0, 1.0);
-}
-)";
-
-glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 5.0f);
-glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
-glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
-
-float yaw = -90.0f;
-float pitch = 0.0f;
-
-float lastX = 400.0f;
-float lastY = 300.0f;
-
+Camera camera(glm::vec3(0.0f, 1.0f, 4.0f));
+float lastX = SCR_WIDTH / 2.0f;
+float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
 
-void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
-    if (firstMouse) {
-        lastX = (float) xpos;
-        lastY = (float) ypos;
-        firstMouse = false;
-    }
-
-    float xoffset = (float) xpos - lastX;
-    float yoffset = lastY - (float) ypos;
-
-    lastX = (float) xpos;
-    lastY = (float) ypos;
-
-    float sensitivity = 0.1f;
-
-    xoffset *= sensitivity;
-    yoffset *= sensitivity;
-
-    yaw += xoffset;
-    pitch += yoffset;
-
-    if (pitch > 89.0f)
-        pitch = 89.0f;
-
-    if (pitch < -89.0f)
-        pitch = -89.0f;
-
-    glm::vec3 direction;
-
-    direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-    direction.y = sin(glm::radians(pitch));
-    direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-
-    cameraFront = glm::normalize(direction);
-}
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
 
 int main() {
-    glfwInit();
-
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW" << std::endl;
+        return -1;
+    }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_STENCIL_BITS, 8);
 
-    const int windowWidth = 800;
-    const int windowHeight = 600;
-
-    GLFWwindow *window = glfwCreateWindow(
-        windowWidth,
-        windowHeight,
-        "Lab - 3D Interactive Cubes",
-        NULL,
-        NULL
-    );
-
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "OpenGL Engine - Blinn-Phong Car", NULL, NULL);
+    if (window == NULL) {
+        std::cerr << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
     glfwMakeContextCurrent(window);
 
-    gladLoadGLLoader((GLADloadproc) glfwGetProcAddress);
-
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cerr << "Failed to initialize GLAD" << std::endl;
+        return -1;
+    }
+
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
 
-    glEnable(GL_STENCIL_TEST);
+    Shader ourShader("src/vertex_shader.glsl", "src/fragment_shader.glsl");
 
-    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-
-    glCompileShader(vertexShader);
-
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-
-    glCompileShader(fragmentShader);
-
-    unsigned int shaderProgram = glCreateProgram();
-
-    glAttachShader(shaderProgram, vertexShader);
-
-    glAttachShader(shaderProgram, fragmentShader);
-
-    glLinkProgram(shaderProgram);
-
-    unsigned int borderFragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-
-    glShaderSource(
-        borderFragmentShader,
-        1,
-        &borderFragmentShaderSource,
-        NULL
-    );
-
-    glCompileShader(borderFragmentShader);
-
-    unsigned int borderShaderProgram = glCreateProgram();
-
-    glAttachShader(borderShaderProgram, vertexShader);
-
-    glAttachShader(borderShaderProgram, borderFragmentShader);
-
-    glLinkProgram(borderShaderProgram);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-    glDeleteShader(borderFragmentShader);
-
-    float vertices[] = {
-
-        -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
-        0.5f, -0.5f, -0.5f, 1.0f, 0.0f,
-        0.5f, 0.5f, -0.5f, 1.0f, 1.0f,
-        0.5f, 0.5f, -0.5f, 1.0f, 1.0f,
-        -0.5f, 0.5f, -0.5f, 0.0f, 1.0f,
-        -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
-
-        -0.5f, -0.5f, 0.5f, 0.0f, 0.0f,
-        0.5f, -0.5f, 0.5f, 1.0f, 0.0f,
-        0.5f, 0.5f, 0.5f, 1.0f, 1.0f,
-        0.5f, 0.5f, 0.5f, 1.0f, 1.0f,
-        -0.5f, 0.5f, 0.5f, 0.0f, 1.0f,
-        -0.5f, -0.5f, 0.5f, 0.0f, 0.0f,
-
-        -0.5f, 0.5f, 0.5f, 1.0f, 0.0f,
-        -0.5f, 0.5f, -0.5f, 1.0f, 1.0f,
-        -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-        -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-        -0.5f, -0.5f, 0.5f, 0.0f, 0.0f,
-        -0.5f, 0.5f, 0.5f, 1.0f, 0.0f,
-
-        0.5f, 0.5f, 0.5f, 1.0f, 0.0f,
-        0.5f, 0.5f, -0.5f, 1.0f, 1.0f,
-        0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-        0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-        0.5f, -0.5f, 0.5f, 0.0f, 0.0f,
-        0.5f, 0.5f, 0.5f, 1.0f, 0.0f,
-
-        -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-        0.5f, -0.5f, -0.5f, 1.0f, 1.0f,
-        0.5f, -0.5f, 0.5f, 1.0f, 0.0f,
-        0.5f, -0.5f, 0.5f, 1.0f, 0.0f,
-        -0.5f, -0.5f, 0.5f, 0.0f, 0.0f,
-        -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-
-        -0.5f, 0.5f, -0.5f, 0.0f, 1.0f,
-        0.5f, 0.5f, -0.5f, 1.0f, 1.0f,
-        0.5f, 0.5f, 0.5f, 1.0f, 0.0f,
-        0.5f, 0.5f, 0.5f, 1.0f, 0.0f,
-        -0.5f, 0.5f, 0.5f, 0.0f, 0.0f,
-        -0.5f, 0.5f, -0.5f, 0.0f, 1.0f
-    };
-
-    unsigned int VAO, VBO;
-
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-
-    glBindVertexArray(VAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        5 * sizeof(float),
-        (void *) 0
-    );
-
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(
-        1,
-        2,
-        GL_FLOAT,
-        GL_FALSE,
-        5 * sizeof(float),
-        (void *) (3 * sizeof(float))
-    );
-
-    glEnableVertexAttribArray(1);
-
-    unsigned char texData[] = {
-        255, 128, 0,
-        0, 200, 255,
-        0, 200, 255,
-        255, 128, 0
-    };
-
-    unsigned int texture;
-
-    glGenTextures(1, &texture);
-
-    glBindTexture(GL_TEXTURE_2D, texture);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RGB,
-        2,
-        2,
-        0,
-        GL_RGB,
-        GL_UNSIGNED_BYTE,
-        texData
-    );
-
-    std::vector<glm::vec3> cubePositions = {
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(2.0f, 1.0f, -3.0f),
-        glm::vec3(-1.5f, -1.0f, -1.5f)
-    };
-
-    std::vector<glm::vec3> cubeScales = {
-        glm::vec3(1.0f),
-        glm::vec3(0.8f),
-        glm::vec3(1.2f)
-    };
-
-    int activeCube = 0;
-
-    double lastTime = glfwGetTime();
-
-    float activeCubeAngle = 0.0f;
+    // ---- КРОК 1: ЗАВАНТАЖЕННЯ МОДЕЛИ МАШИНКИ ----
+    Model ourModel("resources/car/Car.obj");
 
     while (!glfwWindowShouldClose(window)) {
-        double currentTime = glfwGetTime();
+        float currentFrame = static_cast<float>(glfwGetTime());
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
 
-        float deltaTime = (float) (currentTime - lastTime);
+        processInput(window);
 
-        lastTime = currentTime;
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            glfwSetWindowShouldClose(window, true);
+        ourShader.use();
+        ourShader.setVec3("viewPos", camera.Position);
 
-        float cameraSpeed = 2.5f * deltaTime;
+        // ---- КРОК 2: НАЛАШТУВАННЯ МАТЕРІАЛУ СУПЕРКАРА (Пункт 3 ТЗ) ----
+        ourShader.setVec3("material.ambient",  glm::vec3(0.1f, 0.0f, 0.0f));
+        ourShader.setVec3("material.diffuse",  glm::vec3(1.0f, 0.0f, 0.0f)); // Яскраво-червона фарба кузова
+        ourShader.setVec3("material.specular", glm::vec3(0.7f, 0.7f, 0.7f)); // Дзеркальні білі відблиски лаку
+        ourShader.setFloat("material.shininess", 128.0f);                    // Гострий, концентрований блік Блінна-Фонга
 
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-            cameraPos += cameraSpeed * cameraFront;
+        // ---- ТОЧКОВЕ СВІТЛО (Обертання навколо машинки - Пункт 3 ТЗ) ----
+        float lightX = static_cast<float>(sin(glfwGetTime()) * 3.0);
+        float lightZ = static_cast<float>(cos(glfwGetTime()) * 3.0);
+        glm::vec3 lightPos = glm::vec3(lightX, 2.5f, lightZ);
 
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-            cameraPos -= cameraSpeed * cameraFront;
+        ourShader.setVec3("light.position", lightPos);
+        ourShader.setVec3("light.ambient",  glm::vec3(0.1f, 0.1f, 0.1f));
+        ourShader.setVec3("light.diffuse",  glm::vec3(1.0f, 1.0f, 1.0f)); // Чисте біле світло ліхтаря
+        ourShader.setVec3("light.specular", glm::vec3(1.0f, 1.0f, 1.0f));
 
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-            cameraPos -= glm::normalize(
-                glm::cross(cameraFront, cameraUp)
-            ) * cameraSpeed;
+        // Коефіцієнти затухання світла (Attenuation)
+        ourShader.setFloat("light.constant",  1.0f);
+        ourShader.setFloat("light.linear",    0.09f);
+        ourShader.setFloat("light.quadratic", 0.032f);
 
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-            cameraPos += glm::normalize(
-                glm::cross(cameraFront, cameraUp)
-            ) * cameraSpeed;
+        // Матриці камери (Пункт 2 ТЗ)
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+        glm::mat4 view = camera.GetViewMatrix();
+        ourShader.setMat4("projection", projection);
+        ourShader.setMat4("view", view);
 
-        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS)
-            activeCube = 0;
+        // ---- КРОК 3: МАТРИЦЯ МОДЕЛІ (ВИПРАВЛЕНО) ----
+        glm::mat4 model = glm::mat4(1.0f);
 
-        if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS)
-            activeCube = 1;
+        // 1. Повертаємо позиціонування (опускаємо на 0.5 вниз і відсуваємо на 2.0 вперед)
+        model = glm::translate(model, glm::vec3(0.0f, -0.5f, -2.0f));
 
-        if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS)
-            activeCube = 2;
+        // 2. Ставимо ОДИН нормальний масштаб для .obj файлу (1.0f)
+        model = glm::scale(model, glm::vec3(1.0f, 1.0f, 1.0f));
 
-        activeCubeAngle += 50.0f * deltaTime;
+        ourShader.setMat4("model", model);
 
-        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
-
-        glClear(
-            GL_COLOR_BUFFER_BIT |
-            GL_DEPTH_BUFFER_BIT |
-            GL_STENCIL_BUFFER_BIT
-        );
-
-        glm::mat4 view = glm::lookAt(
-            cameraPos,
-            cameraPos + cameraFront,
-            cameraUp
-        );
-
-        glm::mat4 projection = glm::perspective(
-            glm::radians(45.0f),
-            (float) windowWidth / (float) windowHeight,
-            0.1f,
-            100.0f
-        );
-
-        glBindVertexArray(VAO);
-
-        glBindTexture(GL_TEXTURE_2D, texture);
-
-        for (int i = 0; i < cubePositions.size(); i++) {
-            glStencilFunc(GL_ALWAYS, 1, 0xFF);
-
-            glStencilMask(0xFF);
-
-            glUseProgram(shaderProgram);
-
-            glm::mat4 model = glm::mat4(1.0f);
-
-            model = glm::translate(model, cubePositions[i]);
-
-            if (i == activeCube) {
-                model = glm::rotate(
-                    model,
-                    glm::radians(activeCubeAngle),
-                    glm::vec3(0.5f, 1.0f, 0.0f)
-                );
-            }
-
-            model = glm::scale(model, cubeScales[i]);
-
-            glUniformMatrix4fv(
-                glGetUniformLocation(shaderProgram, "model"),
-                1,
-                GL_FALSE,
-                glm::value_ptr(model)
-            );
-
-            glUniformMatrix4fv(
-                glGetUniformLocation(shaderProgram, "view"),
-                1,
-                GL_FALSE,
-                glm::value_ptr(view)
-            );
-
-            glUniformMatrix4fv(
-                glGetUniformLocation(shaderProgram, "projection"),
-                1,
-                GL_FALSE,
-                glm::value_ptr(projection)
-            );
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-
-            if (i == activeCube) {
-                glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
-
-                glStencilMask(0x00);
-
-                glDisable(GL_DEPTH_TEST);
-
-                glUseProgram(borderShaderProgram);
-
-                glm::mat4 borderModel = glm::mat4(1.0f);
-
-                borderModel = glm::translate(
-                    borderModel,
-                    cubePositions[i]
-                );
-
-                borderModel = glm::rotate(
-                    borderModel,
-                    glm::radians(activeCubeAngle),
-                    glm::vec3(0.5f, 1.0f, 0.0f)
-                );
-
-                borderModel = glm::scale(
-                    borderModel,
-                    cubeScales[i] * 1.08f
-                );
-
-                glUniformMatrix4fv(
-                    glGetUniformLocation(borderShaderProgram, "model"),
-                    1,
-                    GL_FALSE,
-                    glm::value_ptr(borderModel)
-                );
-
-                glUniformMatrix4fv(
-                    glGetUniformLocation(borderShaderProgram, "view"),
-                    1,
-                    GL_FALSE,
-                    glm::value_ptr(view)
-                );
-
-                glUniformMatrix4fv(
-                    glGetUniformLocation(borderShaderProgram, "projection"),
-                    1,
-                    GL_FALSE,
-                    glm::value_ptr(projection)
-                );
-
-                glDrawArrays(GL_TRIANGLES, 0, 36);
-
-                glStencilMask(0xFF);
-
-                glEnable(GL_DEPTH_TEST);
-            }
-        }
+        // Рендеринг індексованої геометрії (Виправлено: викликаємо без аргументів)
+        ourModel.Draw(ourShader);
 
         glfwSwapBuffers(window);
-
         glfwPollEvents();
     }
 
-    glDeleteVertexArrays(1, &VAO);
-
-    glDeleteBuffers(1, &VBO);
-
-    glDeleteProgram(shaderProgram);
-
-    glDeleteProgram(borderShaderProgram);
-
     glfwTerminate();
-
     return 0;
+}
+
+void processInput(GLFWwindow *window) {
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, true);
+
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        camera.ProcessKeyboard(FORWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        camera.ProcessKeyboard(BACKWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        camera.ProcessKeyboard(LEFT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        camera.ProcessKeyboard(RIGHT, deltaTime);
+}
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    glViewport(0, 0, width, height);
+}
+
+void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
+    float xpos = static_cast<float>(xposIn);
+    float ypos = static_cast<float>(yposIn);
+
+    if (firstMouse) {
+        lastX = xpos;
+        lastY = ypos;
+        firstMouse = false;
+    }
+
+    float xoffset = xpos - lastX;
+    float yoffset = lastY - ypos;
+
+    lastX = xpos;
+    lastY = ypos;
+
+    camera.ProcessMouseMovement(xoffset, yoffset);
 }
