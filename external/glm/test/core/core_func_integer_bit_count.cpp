@@ -1,6 +1,6 @@
 // This has the programs for computing the number of 1-bits
 // in a word, or byte, etc.
-// Max line length is 57, to fit in hacker.car.
+// Max line length is 57, to fit in hacker.Car.
 #include <cstdio>
 #include <cstdlib>     //To define "exit", req'd by XLC.
 #include <ctime>

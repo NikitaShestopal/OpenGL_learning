@@ -60,7 +60,7 @@ int main() {
     Shader ourShader("src/vertex_shader.glsl", "src/fragment_shader.glsl");
 
     // ---- КРОК 1: ЗАВАНТАЖЕННЯ МОДЕЛИ МАШИНКИ ----
-    Model ourModel("resources/car/Car.obj");
+    Model ourModel("resources/Car/Car.obj");
 
     while (!glfwWindowShouldClose(window)) {
         float currentFrame = static_cast<float>(glfwGetTime());
