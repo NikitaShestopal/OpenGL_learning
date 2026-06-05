@@ -10,13 +10,15 @@
 
 #include <iostream>
 #include <cmath>
+#include <vector>
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void processInput(GLFWwindow *window);
+void drawGrid(Shader& shader, float size, int cells, glm::mat4 view, glm::mat4 projection, float yOffset);
 
-const unsigned int SCR_WIDTH = 1280;
-const unsigned int SCR_HEIGHT = 720;
+unsigned int SCR_WIDTH = 1280;
+unsigned int SCR_HEIGHT = 720;
 
 Camera camera(glm::vec3(0.0f, 1.0f, 4.0f));
 float lastX = SCR_WIDTH / 2.0f;
@@ -35,9 +37,17 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "OpenGL Engine - Blinn-Phong Car", NULL, NULL);
+    // ---- 1 ----
+    GLFWmonitor* primaryMonitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* mode = glfwGetVideoMode(primaryMonitor);
+
+    SCR_WIDTH = mode->width;
+    SCR_HEIGHT = mode->height;
+
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "OpenGL Universal Model Viewer", primaryMonitor, NULL);
+
     if (window == NULL) {
-        std::cerr << "Failed to create GLFW window" << std::endl;
+        std::cout << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
         return -1;
     }
@@ -59,8 +69,24 @@ int main() {
 
     Shader ourShader("src/vertex_shader.glsl", "src/fragment_shader.glsl");
 
-    // ---- КРОК 1: ЗАВАНТАЖЕННЯ МОДЕЛИ МАШИНКИ ----
+    // ---- 2 ----
     Model ourModel("resources/Car/Car.obj");
+
+    // ---- 3 ----
+    float d = ourModel.modelRadius * 2.0f;
+
+    camera.Position = glm::vec3(-d, d, d);
+
+    camera.Yaw   = -45.0f;
+    camera.Pitch = -35.0f;
+    camera.ProcessMouseMovement(0, 0);
+
+    float lightRadius = ourModel.modelRadius * 1.5f;
+    float lightHeight = ourModel.maxBounds.y * 1.5f;
+    if (lightHeight < 1.0f) lightHeight = 2.0f;
+
+    // Рівень підлоги
+    float floorY = ourModel.minBounds.y - ourModel.modelCenter.y;
 
     while (!glfwWindowShouldClose(window)) {
         float currentFrame = static_cast<float>(glfwGetTime());
@@ -69,51 +95,42 @@ int main() {
 
         processInput(window);
 
+        // Очищення екрана
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         ourShader.use();
         ourShader.setVec3("viewPos", camera.Position);
 
-        // ---- КРОК 2: НАЛАШТУВАННЯ МАТЕРІАЛУ СУПЕРКАРА (Пункт 3 ТЗ) ----
-        ourShader.setVec3("material.ambient",  glm::vec3(0.1f, 0.0f, 0.0f));
-        ourShader.setVec3("material.diffuse",  glm::vec3(1.0f, 0.0f, 0.0f)); // Яскраво-червона фарба кузова
-        ourShader.setVec3("material.specular", glm::vec3(0.7f, 0.7f, 0.7f)); // Дзеркальні білі відблиски лаку
-        ourShader.setFloat("material.shininess", 128.0f);                    // Гострий, концентрований блік Блінна-Фонга
-
-        // ---- ТОЧКОВЕ СВІТЛО (Обертання навколо машинки - Пункт 3 ТЗ) ----
-        float lightX = static_cast<float>(sin(glfwGetTime()) * 3.0);
-        float lightZ = static_cast<float>(cos(glfwGetTime()) * 3.0);
-        glm::vec3 lightPos = glm::vec3(lightX, 2.5f, lightZ);
-
-        ourShader.setVec3("light.position", lightPos);
-        ourShader.setVec3("light.ambient",  glm::vec3(0.1f, 0.1f, 0.1f));
-        ourShader.setVec3("light.diffuse",  glm::vec3(1.0f, 1.0f, 1.0f)); // Чисте біле світло ліхтаря
-        ourShader.setVec3("light.specular", glm::vec3(1.0f, 1.0f, 1.0f));
-
-        // Коефіцієнти затухання світла (Attenuation)
-        ourShader.setFloat("light.constant",  1.0f);
-        ourShader.setFloat("light.linear",    0.09f);
-        ourShader.setFloat("light.quadratic", 0.032f);
-
-        // Матриці камери (Пункт 2 ТЗ)
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = camera.GetViewMatrix();
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
-        // ---- КРОК 3: МАТРИЦЯ МОДЕЛІ (ВИПРАВЛЕНО) ----
-        glm::mat4 model = glm::mat4(1.0f);
+        // ---- 4 ----
+        float lightX = static_cast<float>(sin(glfwGetTime()) * lightRadius);
+        float lightZ = static_cast<float>(cos(glfwGetTime()) * lightRadius);
+        glm::vec3 lightPos = glm::vec3(lightX, lightHeight, lightZ);
 
-        // 1. Повертаємо позиціонування (опускаємо на 0.5 вниз і відсуваємо на 2.0 вперед)
-        model = glm::translate(model, glm::vec3(0.0f, -0.5f, -2.0f));
+        ourShader.setVec3("light.position", lightPos);
+        ourShader.setVec3("light.ambient",  glm::vec3(0.15f, 0.15f, 0.15f));
+        ourShader.setVec3("light.diffuse",  glm::vec3(1.5f, 1.5f, 1.5f));
+        ourShader.setVec3("light.specular", glm::vec3(1.5f, 1.5f, 1.5f));
 
-        // 2. Ставимо ОДИН нормальний масштаб для .obj файлу (1.0f)
-        model = glm::scale(model, glm::vec3(1.0f, 1.0f, 1.0f));
+        ourShader.setFloat("light.constant",  1.0f);
+        ourShader.setFloat("light.linear",    0.09f);
+        ourShader.setFloat("light.quadratic", 0.032f);
 
-        ourShader.setMat4("model", model);
+        // ---- 5 ----
+        drawGrid(ourShader, ourModel.modelRadius * 5.0f, 30, view, projection, floorY);
 
-        // Рендеринг індексованої геометрії (Виправлено: викликаємо без аргументів)
+        // ---- 6 ----
+        ourShader.use();
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+
+        modelMatrix = glm::translate(modelMatrix, -ourModel.modelCenter);
+
+        ourShader.setMat4("model", modelMatrix);
         ourModel.Draw(ourShader);
 
         glfwSwapBuffers(window);
@@ -122,6 +139,55 @@ int main() {
 
     glfwTerminate();
     return 0;
+}
+
+// Функція малювання координатної сітки
+void drawGrid(Shader& shader, float size, int cells, glm::mat4 view, glm::mat4 projection, float yOffset) {
+    std::vector<float> xLinesVertices;
+    std::vector<float> zLinesVertices;
+    float step = size / cells;
+
+    for (int i = -cells; i <= cells; ++i) {
+        xLinesVertices.push_back(i * step); xLinesVertices.push_back(yOffset); xLinesVertices.push_back(-size);
+        xLinesVertices.push_back(i * step); xLinesVertices.push_back(yOffset); xLinesVertices.push_back(size);
+
+        zLinesVertices.push_back(-size); zLinesVertices.push_back(yOffset); zLinesVertices.push_back(i * step);
+        zLinesVertices.push_back(size);  zLinesVertices.push_back(yOffset); zLinesVertices.push_back(i * step);
+    }
+
+    shader.use();
+    shader.setMat4("projection", projection);
+    shader.setMat4("view", view);
+    shader.setMat4("model", glm::mat4(1.0f));
+    shader.setVec3("material.specular", glm::vec3(0.0f));
+
+    // 🟢 ГОЛОВНИЙ ПРАПОРЕЦЬ: ставимо 0.0f, щоб шейдер вимкнув тіні для ліній
+    shader.setFloat("material.shininess", 0.0f);
+
+    unsigned int VAO, VBO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+
+    // --- КРОК А: Малюємо червоні лінії (вздовж Z) ---
+    glBufferData(GL_ARRAY_BUFFER, xLinesVertices.size() * sizeof(float), &xLinesVertices[0], GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+
+    shader.setVec3("material.ambient", glm::vec3(1.0f, 0.1f, 0.1f)); // Робимо колір яскравим
+    shader.setVec3("material.diffuse", glm::vec3(1.0f, 0.1f, 0.1f));
+    glDrawArrays(GL_LINES, 0, xLinesVertices.size() / 3);
+
+    // --- КРОК Б: Малюємо сині лінії (вздовж X) ---
+    glBufferData(GL_ARRAY_BUFFER, zLinesVertices.size() * sizeof(float), &zLinesVertices[0], GL_STATIC_DRAW);
+
+    shader.setVec3("material.ambient", glm::vec3(0.1f, 0.1f, 1.0f)); // Робимо колір яскравим
+    shader.setVec3("material.diffuse", glm::vec3(0.1f, 0.1f, 1.0f));
+    glDrawArrays(GL_LINES, 0, zLinesVertices.size() / 3);
+
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
 }
 
 void processInput(GLFWwindow *window) {
@@ -139,6 +205,10 @@ void processInput(GLFWwindow *window) {
 }
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    if (height == 0) height = 1;
+
+    SCR_WIDTH = width;
+    SCR_HEIGHT = height;
     glViewport(0, 0, width, height);
 }
 

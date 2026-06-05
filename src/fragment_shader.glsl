@@ -50,5 +50,11 @@ void main() {
     specular *= attenuation;
 
     vec3 result = ambient + diffuse + specular;
-    FragColor = vec4(result, 1.0);
+
+    // 🟢 ХАК ДЛЯ СІТКИ: якщо блиск рівний 0, ігноруємо ліхтарик і виводимо чистий колір
+    if (material.shininess == 0.0f) {
+        result = material.diffuse;
+    }
+
+    FragColor = vec4(result, 1.0f);
 }

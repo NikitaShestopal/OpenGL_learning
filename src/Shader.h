@@ -65,8 +65,6 @@ public:
         glUseProgram(ID);
     }
 
-    // --- Нові методи для передачі uniform-змінних для системи освітлення та матеріалів ---
-
     void setFloat(const std::string &name, float value) const {
         glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
     }

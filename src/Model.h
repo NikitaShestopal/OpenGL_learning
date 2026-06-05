@@ -1,7 +1,6 @@
 #ifndef MODEL_H
 #define MODEL_H
 
-#include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -12,7 +11,6 @@
 
 #include <string>
 #include <fstream>
-#include <sstream>
 #include <iostream>
 #include <vector>
 
@@ -32,11 +30,15 @@ public:
         }
     }
 
+    glm::vec3 minBounds = glm::vec3(0.0f);
+    glm::vec3 maxBounds = glm::vec3(0.0f);
+    glm::vec3 modelCenter = glm::vec3(0.0f);
+    float modelRadius = 1.0f;
+
 private:
     Assimp::Importer importer;
     const aiScene* scene;
 
-    // 1. Спочатку завантаження моделі
     void loadModel(std::string const &path) {
         scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenSmoothNormals);
 
@@ -44,12 +46,14 @@ private:
             std::cerr << "ERROR::ASSIMP:: " << importer.GetErrorString() << std::endl;
             return;
         }
-        directory = path.substr(0, path.find_last_of('/'));
 
+        std::cout << "SUCCESS:: Materials count: " << scene->mNumMaterials << std::endl;
+        directory = path.substr(0, path.find_last_of('/'));
         processNode(scene->mRootNode, scene);
+
+        calculateBounds();
     }
 
-    // 2. Логіка обходу дерева нод Assimp
     void processNode(aiNode *node, const aiScene *scene) {
         for(unsigned int i = 0; i < node->mNumMeshes; i++) {
             aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
@@ -60,7 +64,6 @@ private:
         }
     }
 
-    // 3. Конвертація Assimp меша в наш Mesh
     Mesh processMesh(aiMesh *mesh, const aiScene *scene) {
         std::vector<Vertex> vertices;
         std::vector<unsigned int> indices;
@@ -103,34 +106,62 @@ private:
         return convertedMesh;
     }
 
-    // 4. Логіка автоматичного витягування кольорів з MTL файлу
     void setupMeshMaterial(unsigned int meshIndex, Shader &shader) {
-        if (!scene || !scene->mMaterials || meshIndex >= meshes.size()) {
-            return;
-        }
+        if (!scene || !scene->mMaterials || meshIndex >= meshes.size()) return;
 
         unsigned int matIndex = meshes[meshIndex].MaterialIndex;
-
-        if (matIndex >= scene->mNumMaterials || !scene->mMaterials[matIndex]) {
-            return;
-        }
+        if (matIndex >= scene->mNumMaterials || !scene->mMaterials[matIndex]) return;
 
         aiMaterial* material = scene->mMaterials[matIndex];
-        aiColor3D color(0.f, 0.f, 0.f);
-        float shininess = 32.0f;
 
+        // КОСТИЛЬ!!!!!!, якщо якихось тегів немає у файлі
+        glm::vec3 ambient(0.2f);
+        glm::vec3 diffuse(0.64f);
+        glm::vec3 specular(0.5f);
+        float shininess = 96.0f;
+
+        aiColor3D color(0.f, 0.f, 0.f);
+
+        // 1. (Kd).mtl
         if (material->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
-            shader.setVec3("material.diffuse", glm::vec3(color.r, color.g, color.b));
+            diffuse = glm::vec3(color.r, color.g, color.b);
         }
+
+        // 2. (Ks).mtl
         if (material->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS) {
-            shader.setVec3("material.specular", glm::vec3(color.r, color.g, color.b));
+            specular = glm::vec3(color.r, color.g, color.b);
         }
+
+        // 3. (Ka).mtl
         if (material->Get(AI_MATKEY_COLOR_AMBIENT, color) == AI_SUCCESS) {
-            shader.setVec3("material.ambient", glm::vec3(color.r, color.g, color.b));
+            ambient = glm::vec3(color.r, color.g, color.b);
         }
-        if (material->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
-            shader.setFloat("material.shininess", shininess);
+
+        // 4. (Ns).mtl
+        material->Get(AI_MATKEY_SHININESS, shininess);
+
+        shader.setVec3("material.ambient", ambient);
+        shader.setVec3("material.diffuse", diffuse);
+        shader.setVec3("material.specular", specular);
+        shader.setFloat("material.shininess", shininess);
+    }
+
+    void calculateBounds() {
+        if (meshes.empty() || meshes[0].vertices.empty()) return;
+
+        minBounds = meshes[0].vertices[0].Position;
+        maxBounds = meshes[0].vertices[0].Position;
+
+        for (const auto& mesh : meshes) {
+            for (const auto& vertex : mesh.vertices) {
+                minBounds = glm::min(minBounds, vertex.Position);
+                maxBounds = glm::max(maxBounds, vertex.Position);
+            }
         }
+
+        modelCenter = (minBounds + maxBounds) * 0.5f;
+        modelRadius = glm::length(maxBounds - modelCenter);
+        if (modelRadius < 0.1f) modelRadius = 1.0f;
     }
 };
 
